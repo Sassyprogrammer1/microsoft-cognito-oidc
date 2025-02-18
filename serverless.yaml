@@ -1,0 +1,117 @@
+service: microsoft-cognito-oidc
+
+plugins:
+  - serverless-offline
+  - serverless-dotenv-plugin
+
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stackName: microsoft-cognito
+  environment:
+    AZURE_CLIENT_SECRET: ${env:AZURE_CLIENT_SECRET}
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID}
+    COGNITO_TOKEN_ENDPOINT: ${env:COGNITO_TOKEN_ENDPOINT}
+    COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID}
+    AZURE_CLIENT_ID: ${env:AZURE_CLIENT_ID}
+    OIDC_ISSUER: ${env:OIDC_ISSUER}
+    COGNITO_REDIRECT_URI: ${env:COGNITO_REDIRECT_URI}
+
+################
+#   RESOURCES  #
+################
+resources:
+  Resources:
+    #########################
+    #      Cognito          #
+    #########################
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: OIDCAuthManagementPool
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireUppercase: true
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: false
+        AutoVerifiedAttributes:
+          - email
+        UsernameAttributes:
+          - email
+        Schema:
+          - Name: email
+            AttributeDataType: String
+            Required: true
+            Mutable: true
+    CognitoUserPoolIdentityProviderMicrosoft:
+      Type: AWS::Cognito::UserPoolIdentityProvider
+      Properties:
+        ProviderName: Microsoft
+        ProviderType: OIDC
+        UserPoolId: !Ref CognitoUserPool
+        ProviderDetails:
+          client_id: ${env:AZURE_CLIENT_ID}   # Replace with the Client ID from Azure
+          client_secret: ${env:AZURE_CLIENT_SECRET}  # Replace with the Client Secret from Azure
+          authorize_scopes: "openid profile email"
+          attributes_request_method: GET
+          oidc_issuer: ${env:OIDC_ISSUER}  # Replace with your Tenant ID
+        AttributeMapping:
+          email: email
+          name: name
+          preferred_username: preferred_username
+    CognitoUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        UserPoolId:
+          Ref: CognitoUserPool
+        ClientName: MyUserPoolClient
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+          - ALLOW_USER_SRP_AUTH
+        SupportedIdentityProviders:
+          - COGNITO
+          - !Ref CognitoUserPoolIdentityProviderMicrosoft
+        CallbackURLs:
+          - ${env:COGNITO_REDIRECT_URI}
+        AllowedOAuthFlows:
+          - code
+        AllowedOAuthScopes:
+          - openid
+          - email
+          - profile
+  Outputs:
+    AuthCognitoUserPoolId:
+      Value: !Ref CognitoUserPool
+      Export:
+        Name: AuthCognitoUserPoolId
+    AuthCognitoUserPoolClientId:
+      Value: !Ref CognitoUserPoolClient
+      Export:
+        Name: AuthCognitoUserPoolClientId
+#############################
+#       LAMBDA FUNCTIONS    #
+#############################
+functions:
+  Auth:
+    handler: dist/main.authHandler
+    events:
+      - http:
+          method: ANY
+          path: /
+          cors:
+            origins:
+              - '*'
+      - http:
+          method: ANY
+          path: '{proxy+}'
+          cors:
+            origins:
+              - '*'
+
