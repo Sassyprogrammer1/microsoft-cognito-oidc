@@ -1,10 +1,19 @@
 import { Module } from '@nestjs/common';
+import { SsoService } from './sso.service';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { CognitoProvider } from './cognito-oidc';
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController], // Register SsoController
+  providers: [
+    {
+      provide: 'SsoService',
+      useClass: SsoService,
+    },
+    {
+      provide: 'OidcProvider',
+      useClass: CognitoProvider,
+    },
+  ], // Register SsoService
 })
-export class AppModule {}
+export class SsoModule {}
